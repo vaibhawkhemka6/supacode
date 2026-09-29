@@ -7,9 +7,11 @@ to know which provider answered.
 """
 
 from . import config
+from .tools import TOOLS
 
 SYSTEM_PROMPT = """
 You are a coding agent. Your job is to code. Always code.
+Use the bash tool to run commands and inspect files.
 """
 
 if config.PROVIDER == "openai":
@@ -25,12 +27,23 @@ else:
 
 
 if __name__ == "__main__":
+    from .tools import call_tool
+
     user_input = input("Enter your prompt> ")
 
-    message, usage = call_llm([
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_input},
-    ])
+    message, usage = call_llm(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_input},
+        ],
+        tools=TOOLS,
+    )
 
     print("\nAgent: ", message["content"], "\n")
+
+    if message["tool_calls"]:
+        tool_call = message["tool_calls"][0]
+        print("Tool: ", tool_call["name"], tool_call["arguments"])
+        print(call_tool(tool_call["name"], tool_call["arguments"]), "\n")
+
     print(usage)
