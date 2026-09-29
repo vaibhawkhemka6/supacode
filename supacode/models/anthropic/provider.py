@@ -22,12 +22,36 @@ def _to_schema(tool):
     }
 
 
+def _to_api_message(m):
+    # The shared normalized shape ({"role", "content", "tool_calls"}) is
+    # what agent.py appends to the message list and feeds straight back in
+    # on the next turn. Anthropic's SDK does strict validation and has no
+    # message-level "tool_calls" field at all - tool calls live as
+    # "tool_use" content blocks instead. So an assistant turn that made a
+    # tool call has to be translated here, or the SDK 400s with
+    # "Extra inputs are not permitted" on the very next call.
+    if m["role"] == "assistant" and m.get("tool_calls"):
+        content = []
+        if m.get("content"):
+            content.append({"type": "text", "text": m["content"]})
+        content.extend(
+            {"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": tc["arguments"]}
+            for tc in m["tool_calls"]
+        )
+        return {"role": "assistant", "content": content}
+
+    # Plain user/assistant turns: pass through role/content only, dropping
+    # any other normalized-shape keys (e.g. an empty "tool_calls": []) that
+    # Anthropic's strict schema would otherwise reject.
+    return {"role": m["role"], "content": m["content"]}
+
+
 def call(messages, tools=None):
     # Anthropic takes the system prompt as its own top-level param, not as
     # a message in the list — so we peel it off here rather than making the
     # rest of the agent think about it.
     system = messages[0]["content"] if messages and messages[0]["role"] == "system" else None
-    rest = [m for m in messages if m["role"] != "system"]
+    rest = [_to_api_message(m) for m in messages if m["role"] != "system"]
 
     kwargs = {"tools": [_to_schema(t) for t in tools]} if tools else {}
 

@@ -28,12 +28,41 @@ def _to_schema(tool):
     }
 
 
+def _to_api_message(m):
+    # Same problem as the Anthropic side: agent.py feeds the normalized
+    # output shape straight back in as input. OpenAI *does* have a
+    # message-level "tool_calls" field, but it expects
+    # {"id", "type": "function", "function": {"name", "arguments": "<json str>"}}
+    # - not our simplified {"id", "name", "arguments": <dict>}. Sending the
+    # normalized dict straight through would either be silently wrong
+    # (arguments as a dict instead of a JSON string) or rejected, so
+    # translate it here.
+    if m["role"] == "assistant" and m.get("tool_calls"):
+        return {
+            "role": "assistant",
+            "content": m["content"] or None,
+            "tool_calls": [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {"name": tc["name"], "arguments": json.dumps(tc["arguments"])},
+                }
+                for tc in m["tool_calls"]
+            ],
+        }
+
+    # Plain user/system/assistant turns: pass through role/content only,
+    # dropping any other normalized-shape keys (e.g. an empty
+    # "tool_calls": []) that don't belong on the wire.
+    return {"role": m["role"], "content": m["content"]}
+
+
 def call(messages, tools=None):
     kwargs = {"tools": [_to_schema(t) for t in tools]} if tools else {}
 
     response = client.chat.completions.create(
         model=config.MODEL,
-        messages=messages,
+        messages=[_to_api_message(m) for m in messages],
         **kwargs,
     )
 
