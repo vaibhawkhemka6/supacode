@@ -22,28 +22,50 @@ def _to_schema(tool):
     }
 
 
-def _to_api_message(m):
-    # The shared normalized shape ({"role", "content", "tool_calls"}) is
-    # what agent.py appends to the message list and feeds straight back in
-    # on the next turn. Anthropic's SDK does strict validation and has no
-    # message-level "tool_calls" field at all - tool calls live as
-    # "tool_use" content blocks instead. So an assistant turn that made a
-    # tool call has to be translated here, or the SDK 400s with
-    # "Extra inputs are not permitted" on the very next call.
-    if m["role"] == "assistant" and m.get("tool_calls"):
-        content = []
-        if m.get("content"):
-            content.append({"type": "text", "text": m["content"]})
-        content.extend(
-            {"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": tc["arguments"]}
-            for tc in m["tool_calls"]
-        )
-        return {"role": "assistant", "content": content}
+def _to_api_messages(messages):
+    """Convert the whole normalized history to Anthropic's wire format.
 
-    # Plain user/assistant turns: pass through role/content only, dropping
-    # any other normalized-shape keys (e.g. an empty "tool_calls": []) that
-    # Anthropic's strict schema would otherwise reject.
-    return {"role": m["role"], "content": m["content"]}
+    Whole-list, not per-message, because tool results need to merge:
+    Anthropic has no "tool" role - a tool result becomes a "user" message
+    carrying a tool_result content block - and when one assistant turn
+    calls several tools, every one of their results must ride in a
+    *single* following user message, not one user message per result (the
+    inner loop appends one normalized tool-message per call, so without
+    this merge two consecutive tool calls would produce two consecutive
+    "user" messages, which the SDK rejects).
+    """
+    wire = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+
+        if m["role"] == "tool":
+            block = {"type": "tool_result", "tool_use_id": m["tool_call_id"], "content": m["content"]}
+            if wire and wire[-1].get("_tool_result_batch"):
+                wire[-1]["content"].append(block)
+            else:
+                wire.append({"role": "user", "content": [block], "_tool_result_batch": True})
+            continue
+
+        if m["role"] == "assistant" and m.get("tool_calls"):
+            content = []
+            if m.get("content"):
+                content.append({"type": "text", "text": m["content"]})
+            content.extend(
+                {"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": tc["arguments"]}
+                for tc in m["tool_calls"]
+            )
+            wire.append({"role": "assistant", "content": content})
+            continue
+
+        # Plain user/assistant turns: pass through role/content only,
+        # dropping any other normalized-shape keys (e.g. an empty
+        # "tool_calls": []) that Anthropic's strict schema would reject.
+        wire.append({"role": m["role"], "content": m["content"]})
+
+    for m in wire:
+        m.pop("_tool_result_batch", None)  # internal marker, not part of the wire shape
+    return wire
 
 
 def call(messages, tools=None):
@@ -51,7 +73,7 @@ def call(messages, tools=None):
     # a message in the list — so we peel it off here rather than making the
     # rest of the agent think about it.
     system = messages[0]["content"] if messages and messages[0]["role"] == "system" else None
-    rest = [_to_api_message(m) for m in messages if m["role"] != "system"]
+    rest = _to_api_messages(messages)
 
     kwargs = {"tools": [_to_schema(t) for t in tools]} if tools else {}
 

@@ -51,6 +51,12 @@ def _to_api_message(m):
             ],
         }
 
+    if m["role"] == "tool":
+        # Must keep tool_call_id - it's how the model matches this result
+        # back to the specific tool_call it made. Dropping it (the generic
+        # fallback below would) makes OpenAI reject the request outright.
+        return {"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]}
+
     # Plain user/system/assistant turns: pass through role/content only,
     # dropping any other normalized-shape keys (e.g. an empty
     # "tool_calls": []) that don't belong on the wire.
