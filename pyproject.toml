@@ -1,0 +1,17 @@
+[project]
+name = "supacode"
+version = "0.1.0"
+description = "A coding agent harness built from scratch"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=1.9.0",
+    "openai>=1.0.0",
+]
+
+[project.scripts]
+supacode = "supacode.agent:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
