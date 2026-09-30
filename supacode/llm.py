@@ -20,7 +20,9 @@ from .tools import TOOLS
 
 SYSTEM_PROMPT = """
 You are a coding agent. Your job is to code. Always code.
-Use the bash tool to run commands and inspect files.
+Use the bash tool to run commands and inspect the filesystem.
+Use read_file to read files, write_file to create new files, and
+str_replace to make targeted edits to existing files.
 """
 
 if config.PROVIDER == "openai":
