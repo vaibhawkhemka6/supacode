@@ -1,13 +1,16 @@
 from . import commands
 from .llm import SYSTEM_PROMPT, call_llm
 from .tools import TOOLS, call_tool
+from .ui import ui
 
 
 def main():
+    ui.banner()
+
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     while True:
-        user_input = input("> ")
+        user_input = ui.ask()
         if not user_input:
             break
 
@@ -18,19 +21,20 @@ def main():
         messages.append({"role": "user", "content": user_input})
 
         while True:  # inner loop: keep calling until the model stops asking for tools
-            message, usage = call_llm(messages, tools=TOOLS)
+            with ui.working():
+                message, usage = call_llm(messages, tools=TOOLS)
             messages.append(message)
+            ui.usage(usage)
 
             if message["content"]:
-                print("\nAgent:", message["content"], "\n")
+                ui.agent(message["content"])
 
             if not message["tool_calls"]:
                 break
 
             for tool_call in message["tool_calls"]:
                 result = call_tool(tool_call["name"], tool_call["arguments"])
-                print(f"Tool: {tool_call['name']} {tool_call['arguments']}")
-                print(result, "\n")
+                ui.tool(tool_call["name"], tool_call["arguments"], result)
 
                 messages.append({
                     "role": "tool",
