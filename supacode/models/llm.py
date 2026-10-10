@@ -15,8 +15,8 @@ with tool_calls in the response yet. That's fine; it's still correct
 behavior, just an unused capability until the inner loop (step 4) reads it.
 """
 
-from . import config
-from .tools import TOOLS
+from .. import config
+from ..tools import TOOLS
 
 SYSTEM_PROMPT = """
 You are a coding agent. Your job is to code. Always code.
@@ -26,10 +26,10 @@ str_replace to make targeted edits to existing files.
 """
 
 if config.PROVIDER == "openai":
-    from .models.openai.provider import call as _call, client
+    from .openai.provider import call as _call, client
 
 elif config.PROVIDER == "anthropic":
-    from .models.anthropic.provider import call as _call, client
+    from .anthropic.provider import call as _call, client
 
 else:
     raise ValueError(
@@ -42,7 +42,7 @@ def call_llm(messages, tools=None):
 
 
 if __name__ == "__main__":
-    from .tools import call_tool
+    from ..tools import call_tool
 
     user_input = input("Enter your prompt> ")
 

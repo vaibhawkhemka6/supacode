@@ -3,10 +3,9 @@
 Knows nothing about LLMs, providers or tools - it only receives plain
 strings and dicts and decides how they look. Ported from neuralcode's
 ui.py, trimmed to what supacode actually has right now: no session
-persistence (no resumed/replay), no permission gate (no approve), no
-subagents, no write_todos tool, no compaction, no context-reminder
-injection. Those methods land here once their features exist - not
-before, same rule as ToolSpec.kind.
+persistence (no resumed/replay), no subagents, no write_todos tool, no
+compaction, no context-reminder injection. Those methods land here once
+their features exist - not before, same rule as ToolSpec.kind.
 """
 
 import json
@@ -86,6 +85,21 @@ class UI:
             Text(label, style=MUTED), spinner="dots", spinner_style=ACCENT
         ):
             yield
+
+    def approve(self, reason):
+        """Block on a y/n prompt for a tool call permissions.check flagged "ask".
+
+        Anything except an explicit yes - "n", garbage input, Ctrl-C/EOF -
+        comes back False. A permission prompt has to fail closed: an
+        unreadable answer must behave like "no", not like "allow".
+        """
+        self.console.print(Padding(Text(reason, style=f"bold {TOOL}"), (1, 0, 0, 2)))
+        try:
+            answer = input("  allow? (y/n)> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            self.console.print()
+            return False
+        return answer.lower().startswith("y")
 
     # ---------------------------------------------------------------- usage
 

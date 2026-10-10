@@ -5,15 +5,20 @@ Every tool the agent can call is declared here once, as a ToolSpec.
 to prove tool-calling works end to end before write_todos joins this same
 list (step 5).
 
-No ToolKind yet on purpose: that classification (read_only / file_edit /
-other) only earns its keep once the permission gate (step 6) exists to
-read it. Adding it now would be a field nothing consumes. It goes back on
-ToolSpec in that step, not before.
+call_tool now runs every call through permissions.check (step 7) before
+touching the tool's func - deny blocks it outright, ask blocks on a
+human y/n via ui.approve, allow runs it straight through. The tool
+functions themselves stay ignorant of all this; they're exactly the bare
+functions they were before the gate existed.
 
-No sandbox (step 7), no permission check (step 6), no output capping
-(step 8) yet - these run bare, straight against the real filesystem /
-a raw subprocess. Those wrap these same functions later; they don't
-change their shape.
+No ToolKind yet on purpose: that classification (read_only / file_edit /
+other) only earns its keep once something other than permissions.check's
+own name-based dispatch needs to read it. Adding it now would be a field
+nothing consumes.
+
+No sandbox (step 8), no output capping yet - these run bare, straight
+against the real filesystem / a raw subprocess. Those wrap these same
+functions later; they don't change their shape.
 """
 
 import subprocess
@@ -175,10 +180,25 @@ TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
 
 
 def call_tool(name: str, args: dict) -> str:
-    """Look up a tool by name and run it.
+    """Run a tool call through the permission gate, then the tool itself.
 
-    No permission gate yet (step 6), no error containment yet (step 4's
-    inner loop adds that) - this exists only so a smoke test can prove a
-    tool call round-trips end to end.
+    Imports are local (not at module top) to dodge a cycle: ui.py doesn't
+    import tools today, but the registry is the thing every future entry
+    point calls into, so keeping the dependency direction one-way here -
+    tools reaches out to permissions/ui, neither reaches back in - is
+    cheap insurance against that becoming circular later.
+
+    No error containment yet (step 4's inner loop adds that) - this
+    exists so a smoke test can prove a tool call, gated, round-trips end
+    to end.
     """
+    from . import permissions
+    from ..ui import ui
+
+    action, reason = permissions.check(name, args)
+    if action == "deny":
+        return f"Blocked by policy: {reason}"
+    if action == "ask" and not ui.approve(reason):
+        return "The user denied this tool call."
+
     return TOOLS_BY_NAME[name].func(**args)

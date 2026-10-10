@@ -1,5 +1,5 @@
 from . import commands
-from .llm import SYSTEM_PROMPT, call_llm
+from .models.llm import SYSTEM_PROMPT, call_llm
 from .tools import TOOLS, call_tool
 from .ui import ui
 
