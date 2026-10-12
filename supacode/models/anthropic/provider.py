@@ -68,7 +68,7 @@ def _to_api_messages(messages):
     return wire
 
 
-def call(messages, tools=None):
+def call(messages, tools=None, on_text=None):
     # Anthropic takes the system prompt as its own top-level param, not as
     # a message in the list — so we peel it off here rather than making the
     # rest of the agent think about it.
@@ -77,13 +77,26 @@ def call(messages, tools=None):
 
     kwargs = {"tools": [_to_schema(t) for t in tools]} if tools else {}
 
-    response = client.messages.create(
+    # .stream() instead of .create(): the SDK does the hard part of
+    # streaming itself — accumulating tool_use JSON fragments across
+    # events into a complete, parsed `.input` dict — so get_final_message()
+    # below hands back the exact same shape .create() used to return in
+    # one shot. We only hook .text_stream for the live incremental text;
+    # everything else (tool calls, usage) is read off the final message,
+    # same as before.
+    with client.messages.stream(
         model=config.MODEL,
         system=system,
         messages=rest,
         max_tokens=4096,
         **kwargs,
-    )
+    ) as stream:
+        text_parts = []
+        for delta in stream.text_stream:
+            text_parts.append(delta)
+            if on_text:
+                on_text("".join(text_parts))
+        response = stream.get_final_message()
 
     text = "".join(block.text for block in response.content if block.type == "text")
     message = {

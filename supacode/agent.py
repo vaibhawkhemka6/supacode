@@ -1,4 +1,4 @@
-from . import commands
+from . import commands, session
 from .models.llm import SYSTEM_PROMPT, call_llm
 from .tools import TOOLS, call_tool
 from .ui import ui
@@ -16,18 +16,17 @@ def main():
 
         if user_input.startswith("/"):
             messages = commands.handle(user_input, messages)
+            session.save(messages)
             continue
 
         messages.append({"role": "user", "content": user_input})
 
         while True:  # inner loop: keep calling until the model stops asking for tools
-            with ui.working():
-                message, usage = call_llm(messages, tools=TOOLS)
+            with ui.stream() as on_text:
+                message, usage = call_llm(messages, tools=TOOLS, on_text=on_text)
             messages.append(message)
+            session.save(messages)
             ui.usage(usage)
-
-            if message["content"]:
-                ui.agent(message["content"])
 
             if not message["tool_calls"]:
                 break
@@ -41,6 +40,7 @@ def main():
                     "tool_call_id": tool_call["id"],
                     "content": result,
                 })
+                session.save(messages)
 
 
 if __name__ == "__main__":

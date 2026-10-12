@@ -37,8 +37,15 @@ else:
     )
 
 
-def call_llm(messages, tools=None):
-    return _call(messages, tools=tools or TOOLS)
+def call_llm(messages, tools=None, on_text=None):
+    """on_text, if given, is called with the cumulative assistant text so
+    far every time the provider receives another chunk of it - the hook
+    that lets ui.stream() redraw live instead of printing once at the end.
+    It's optional: callers (like the __main__ block below, or a future
+    subagent that wants no live output) can leave it unset and just get
+    the final (message, usage) back, same as before streaming existed.
+    """
+    return _call(messages, tools=tools or TOOLS, on_text=on_text)
 
 
 if __name__ == "__main__":
@@ -52,6 +59,7 @@ if __name__ == "__main__":
             {"role": "user", "content": user_input},
         ],
         tools=TOOLS,
+        on_text=lambda text: print(text, end="\r"),
     )
 
     print("\nAgent: ", message["content"], "\n")

@@ -63,32 +63,72 @@ def _to_api_message(m):
     return {"role": m["role"], "content": m["content"]}
 
 
-def call(messages, tools=None):
+def call(messages, tools=None, on_text=None):
     kwargs = {"tools": [_to_schema(t) for t in tools]} if tools else {}
 
-    response = client.chat.completions.create(
+    # Unlike Anthropic's SDK, openai's stream=True hands back raw deltas
+    # with no built-in accumulator - each chunk carries only the next
+    # fragment of text or of a tool call's arguments JSON string, keyed
+    # by an `index` that ties fragments from the same tool call together
+    # across chunks. We do that accumulation by hand below, then only
+    # json.loads() each tool call's arguments once, at the end, when the
+    # fragments are guaranteed complete - parsing a half-arrived JSON
+    # string mid-stream would just raise. stream_options include_usage
+    # asks for the one usage-bearing chunk the API otherwise wouldn't send
+    # at all in streaming mode.
+    stream = client.chat.completions.create(
         model=config.MODEL,
         messages=[_to_api_message(m) for m in messages],
+        stream=True,
+        stream_options={"include_usage": True},
         **kwargs,
     )
 
-    choice = response.choices[0].message
+    text_parts = []
+    tool_calls = {}  # index -> {"id", "name", "arguments": "<partial json>"}
+    usage = None
+
+    for chunk in stream:
+        if chunk.usage:
+            usage = chunk.usage
+
+        if not chunk.choices:
+            continue  # the final usage-only chunk has no choices
+
+        delta = chunk.choices[0].delta
+
+        if delta.content:
+            text_parts.append(delta.content)
+            if on_text:
+                on_text("".join(text_parts))
+
+        for tc_delta in delta.tool_calls or []:
+            slot = tool_calls.setdefault(
+                tc_delta.index, {"id": None, "name": None, "arguments": ""}
+            )
+            if tc_delta.id:
+                slot["id"] = tc_delta.id
+            if tc_delta.function and tc_delta.function.name:
+                slot["name"] = tc_delta.function.name
+            if tc_delta.function and tc_delta.function.arguments:
+                slot["arguments"] += tc_delta.function.arguments
+
     message = {
         "role": "assistant",
-        "content": choice.content or "",
+        "content": "".join(text_parts),
         "tool_calls": [
             {
-                "id": tc.id,
-                "name": tc.function.name,
-                "arguments": json.loads(tc.function.arguments),
+                "id": tool_calls[i]["id"],
+                "name": tool_calls[i]["name"],
+                "arguments": json.loads(tool_calls[i]["arguments"] or "{}"),
             }
-            for tc in (choice.tool_calls or [])
+            for i in sorted(tool_calls)
         ],
     }
 
     usage = {
-        "prompt_tokens": response.usage.prompt_tokens,
-        "completion_tokens": response.usage.completion_tokens,
+        "prompt_tokens": usage.prompt_tokens if usage else 0,
+        "completion_tokens": usage.completion_tokens if usage else 0,
     }
 
     return message, usage
