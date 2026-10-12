@@ -1,9 +1,14 @@
 """Which tool calls need a human.
 
-Sandboxing (not built yet) decides what is *possible*. This module only
-decides what is worth interrupting a human for - read-only or clearly-safe
-calls run silently, genuinely destructive ones never run no matter who
-says yes, and everything in between stops and asks.
+sandbox.py decides what is *possible* - confined paths, capped subprocess
+resources, enforced from inside the tool functions themselves, so it
+holds even if this module is bypassed entirely. This module only decides
+what is worth interrupting a human for - read-only or clearly-safe calls
+run silently, genuinely destructive ones never run no matter who says
+yes, and everything in between stops and asks. The two are deliberately
+separate: this is a cooperative convention one disciplined call site
+(call_tool) enforces, not a physical guarantee - sandbox.py is where the
+physical guarantee actually lives.
 
 Three verdicts, and deny beats ask beats allow:
 - "allow": run it, no interruption.

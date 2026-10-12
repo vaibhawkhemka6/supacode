@@ -16,15 +16,22 @@ other) only earns its keep once something other than permissions.check's
 own name-based dispatch needs to read it. Adding it now would be a field
 nothing consumes.
 
-No sandbox (step 8), no output capping yet - these run bare, straight
-against the real filesystem / a raw subprocess. Those wrap these same
-functions later; they don't change their shape.
+Sandbox (step 8) now sits underneath bash/write_file/str_replace, called
+directly from inside these functions rather than from call_tool - so the
+physical limits (confined paths, capped subprocess resources) hold even
+if something calls these functions straight, skipping the permission
+gate entirely. The functions' shape doesn't change: same arguments, same
+"always return a string, never raise" contract. read_file stays bare on
+purpose - it was already unconditionally allowed, and confining it too
+would block the agent from inspecting anything outside its own project.
 """
 
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+from . import sandbox
 
 
 @dataclass(frozen=True)
@@ -36,11 +43,16 @@ class ToolSpec:
 
 
 def bash(command: str) -> str:
-    """Run a shell command and return its combined stdout and stderr."""
+    """Run a shell command and return its combined stdout and stderr.
+
+    Runs through sandbox.run_sandboxed, not a raw subprocess.run - the
+    wall-clock timeout below is unchanged, but the subprocess tree now
+    also carries capped CPU time, process count, and (where supported)
+    address space, so a forkbomb or a memory leak dies on its own limits
+    instead of relying on the timeout (or a human) to notice in time.
+    """
     try:
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, timeout=120,
-        )
+        result = sandbox.run_sandboxed(command, timeout=120)
     except subprocess.TimeoutExpired as expired:
         # Hand the failure back as a result, not an exception - a slow
         # command is the model's problem to work around, not a reason to
@@ -68,9 +80,19 @@ def read_file(path: str) -> str:
 
 
 def write_file(path: str, content: str) -> str:
-    """Write content to a file, creating it (and overwriting it) as needed."""
+    """Write content to a file, creating it (and overwriting it) as needed.
+
+    confine() resolves path first and raises if it lands outside the
+    project - this holds regardless of what permissions.check decided
+    upstream, so a human mistakenly saying "y" to a write outside the
+    project still can't make it land there.
+    """
     try:
-        Path(path).write_text(content)
+        resolved = sandbox.confine(path)
+    except sandbox.SandboxError as error:
+        return f"Blocked by sandbox: {error}"
+    try:
+        resolved.write_text(content)
     except OSError as error:
         return f"Error writing {path}: {error}"
     return f"Wrote {len(content)} characters to {path}"
@@ -79,7 +101,11 @@ def write_file(path: str, content: str) -> str:
 def str_replace(path: str, old_str: str, new_str: str) -> str:
     """Replace one exact-match occurrence of old_str with new_str in a file."""
     try:
-        text = Path(path).read_text()
+        resolved = sandbox.confine(path)
+    except sandbox.SandboxError as error:
+        return f"Blocked by sandbox: {error}"
+    try:
+        text = resolved.read_text()
     except OSError as error:
         return f"Error reading {path}: {error}"
     except UnicodeDecodeError as error:
@@ -92,7 +118,7 @@ def str_replace(path: str, old_str: str, new_str: str) -> str:
         return f"old_str is not unique in {path} ({count} matches) - include more surrounding context"
 
     try:
-        Path(path).write_text(text.replace(old_str, new_str, 1))
+        resolved.write_text(text.replace(old_str, new_str, 1))
     except OSError as error:
         return f"Error writing {path}: {error}"
     return f"Replaced 1 occurrence in {path}"
