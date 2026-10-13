@@ -1,6 +1,6 @@
 """Keeping tool output from blowing up the context window.
 
-Two tiers live here so far, cheapest first:
+Three tiers live here so far, cheapest first:
 
 1. cap   (9a) - a fresh tool result is trimmed the instant it's created,
            and the full text parked in a temp file the agent can page
@@ -12,22 +12,34 @@ Two tiers live here so far, cheapest first:
            open: several medium results in one turn, none big enough to
            trip cap on its own, that would otherwise just pile up turn
            after turn forever.
+3. fit   (9c) - runs before every single call to the model, not once per
+           tool result and not once per finished turn. Closes the gap
+           strip leaves open: a turn that's still in progress, firing
+           tool call after tool call, can blow past the window before
+           strip ever gets a chance to run. If the running total is over
+           budget, fit throws whole tool results away outright, oldest
+           first, until it's back under - the harshest tier, used only
+           when cap and strip, each doing their job correctly, still
+           weren't enough.
 
-Two more tiers land as their own steps: fit/drop (9c - last-resort
-trimming inside a single request) and full LLM-summary compaction (9d -
-the expensive /compact rebuild). Both are still dead code before
-anything calls them.
+One more tier lands as its own step: full LLM-summary compaction (9d -
+the expensive /compact rebuild). Still dead code before anything calls
+it - but fit's budget already uses the exact threshold compaction will
+trigger on, so the two are ready to agree the moment 9d exists.
 
-strip is the first tier that edits messages already sitting in
-`messages`, not a fresh string at creation time, so it has to respect the
-locked prefix - the frozen system + summary + head that compaction (9d)
-will eventually leave behind. `locked()` exists now so strip (and later
-fit/drop) never touch it, even though nothing produces a <summary>
-marker yet.
+strip and fit are the two tiers that edit messages already sitting in
+`messages`, not a fresh string at creation time like cap, so both have to
+respect the locked prefix - the frozen system + summary + head that
+compaction (9d) will eventually leave behind. `locked()` exists now so
+neither ever touches it, even though nothing produces a <summary> marker
+yet.
 """
 
+import json
 import tempfile
 from pathlib import Path
+
+from . import config
 
 CAP = 10_000  # chars of a fresh tool result the agent sees inline
 STUB = 300  # chars kept once the turn that produced a tool result is over
@@ -116,3 +128,29 @@ def strip(messages):
         )
         shrunk += 1
     return shrunk
+
+
+def estimate(messages):
+    """Rough token count. Good enough to decide whether to panic - not a
+    real tokenizer call, just chars / 4 over the whole list."""
+    return sum(len(json.dumps(m)) for m in messages) // 4
+
+
+def fit(messages):
+    """Last resort: discard whole tool results, oldest first, until the
+    request fits a safety budget - checked before every single call to the
+    model, not once per tool result (cap) or once per finished turn (strip).
+
+    Returns how many were dropped. Normally zero - cap and strip already do
+    the real work; this only fires when a turn still in progress piles up
+    faster than either of them ever gets a chance to act.
+    """
+    budget = config.CONTEXT_WINDOW * config.COMPACT_AT
+    dropped = 0
+    for message in messages[locked(messages):]:
+        if estimate(messages) <= budget:
+            break
+        if message["role"] == "tool" and TRIMMED not in (message.get("content") or ""):
+            message["content"] = f"{TRIMMED} dropped to fit the context window.]"
+            dropped += 1
+    return dropped

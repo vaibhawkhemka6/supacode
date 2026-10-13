@@ -22,6 +22,9 @@ def main():
         messages.append({"role": "user", "content": user_input})
 
         while True:  # inner loop: keep calling until the model stops asking for tools
+            if history.fit(messages):
+                ui.note("dropped old tool output to make this request fit")
+
             with ui.stream() as on_text:
                 message, usage = call_llm(messages, tools=TOOLS, on_text=on_text)
             messages.append(message)

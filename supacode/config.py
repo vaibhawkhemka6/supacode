@@ -31,3 +31,7 @@ _DEFAULT_MODEL = {
     "anthropic": "claude-opus-4-6-20260101",
 }
 MODEL = os.environ.get("MODEL", _DEFAULT_MODEL.get(PROVIDER, ""))
+
+# How much room the model has, and when history.fit() starts to panic.
+CONTEXT_WINDOW = int(os.environ.get("CONTEXT_WINDOW", 128_000))
+COMPACT_AT = 0.85  # fit()'s budget line - same threshold compaction (9d) will use
