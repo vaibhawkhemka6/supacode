@@ -43,6 +43,7 @@ def main():
                 session.save(messages)
 
         history.sweep()  # turn's over: bin its temp files, win or not
+        history.strip(messages)  # ...and shrink the tool output it produced
 
 
 if __name__ == "__main__":
