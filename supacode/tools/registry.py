@@ -24,6 +24,11 @@ gate entirely. The functions' shape doesn't change: same arguments, same
 "always return a string, never raise" contract. read_file stays bare on
 purpose - it was already unconditionally allowed, and confining it too
 would block the agent from inspecting anything outside its own project.
+
+history.cap (step 9a) now wraps bash's and read_file's return values -
+the two tools whose output size is unbounded. write_file and str_replace
+stay unwrapped: they only ever return a short confirmation string, never
+the file content itself, so there's nothing for cap to do there.
 """
 
 import subprocess
@@ -31,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .. import history
 from . import sandbox
 
 
@@ -61,13 +67,13 @@ def bash(command: str) -> str:
             f"Timed out after {expired.timeout}s and was killed. "
             "Narrow it down rather than re-running the same thing."
         )
-    return (result.stdout + result.stderr) or "(no output)"
+    return history.cap((result.stdout + result.stderr) or "(no output)")
 
 
 def read_file(path: str) -> str:
     """Read a file and return its contents."""
     try:
-        return Path(path).read_text()
+        return history.cap(Path(path).read_text())
     except OSError as error:
         return f"Error reading {path}: {error}"
     except UnicodeDecodeError as error:

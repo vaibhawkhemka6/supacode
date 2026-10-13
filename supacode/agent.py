@@ -1,4 +1,4 @@
-from . import commands, session
+from . import commands, history, session
 from .models.llm import SYSTEM_PROMPT, call_llm
 from .tools import TOOLS, call_tool
 from .ui import ui
@@ -41,6 +41,8 @@ def main():
                     "content": result,
                 })
                 session.save(messages)
+
+        history.sweep()  # turn's over: bin its temp files, win or not
 
 
 if __name__ == "__main__":
