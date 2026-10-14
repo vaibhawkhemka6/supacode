@@ -78,6 +78,30 @@ class UI:
     def note(self, text):
         self.console.print(Padding(Text(text, style=MUTED), (1, 0, 0, 2)))
 
+    def compacted(self, before, messages):
+        """Printed right after /compact (or the automatic trigger) rebuilds
+        the transcript - shows the handoff note itself, not just a count,
+        since that note is the only record of everything it replaced."""
+        summary = next(
+            (m["content"] for m in messages if "<summary>" in (m.get("content") or "")),
+            "",
+        )
+        self.console.print(
+            Padding(
+                Panel(
+                    Markdown(summary.replace("<summary>", "").replace("</summary>", "")),
+                    title=Text(
+                        f"compacted · {before} → {len(messages)} messages",
+                        style=f"bold {TOOL}",
+                    ),
+                    title_align="left",
+                    border_style=TOOL,
+                    padding=(0, 1),
+                ),
+                (1, 2, 0, 2),
+            )
+        )
+
     def resumed(self, messages, label="resumed"):
         """One-line header printed right after redrawing a loaded session."""
         turns = sum(1 for m in messages if m["role"] == "user")

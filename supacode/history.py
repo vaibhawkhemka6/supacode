@@ -22,10 +22,13 @@ Three tiers live here so far, cheapest first:
            when cap and strip, each doing their job correctly, still
            weren't enough.
 
-One more tier lands as its own step: full LLM-summary compaction (9d -
-the expensive /compact rebuild). Still dead code before anything calls
-it - but fit's budget already uses the exact threshold compaction will
-trigger on, so the two are ready to agree the moment 9d exists.
+A fourth, more expensive tier now exists too, but lives in its own
+module: compact.py (9d - the full LLM-summary rebuild behind /compact
+and the automatic trigger in agent.py). It needs an extra LLM call and
+slash-command plumbing cap/strip/fit don't, so it's kept separate - but
+its trigger (compact.needed()) checks the exact same budget line fit()
+already uses, and it's the only tier that ever gives locked() below a
+non-zero answer.
 
 strip and fit are the two tiers that edit messages already sitting in
 `messages`, not a fresh string at creation time like cap, so both have to

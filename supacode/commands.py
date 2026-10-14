@@ -1,17 +1,19 @@
 """Slash commands. Anything typed starting with / lands here.
 
-/rewind and /sessions now exist, backed by session.py's JSONL log.
-/compact doesn't yet - it needs compact.py's summarization logic first,
-which lands in a later step; until then it falls through to the same
-"show available commands" fallback as any unrecognized command.
+/rewind and /sessions are backed by session.py's JSONL log. /compact is
+backed by compact.py's summarization logic (step 9d) - it runs the same
+rebuild the automatic trigger in agent.py runs after a turn crosses
+config.COMPACT_AT, just on demand instead of only when forced to.
 """
 
+from . import compact as compaction
 from . import session
 from .ui import ui
 
 COMMANDS = {
     "/rewind": "jump back to an earlier point in this chat",
     "/sessions": "open a past chat",
+    "/compact": "summarise the history so far and free up the context window",
 }
 
 
@@ -51,10 +53,30 @@ def sessions(messages):
     return redraw(session.open_session(saved[choice]["id"]), "opened")
 
 
+def compact(messages):
+    before = len(messages)
+    try:
+        compacted = compaction.compact(messages)
+    except Exception as failure:  # noqa: BLE001
+        # Compaction is one more API call, and it fires when the window is
+        # nearly full - the worst moment to lose the session over a rate
+        # limit or a flaky connection.
+        ui.note(f"compaction failed ({type(failure).__name__}); transcript kept as is")
+        return messages
+    if len(compacted) == before:
+        ui.note("nothing old enough to compact yet")
+        return messages
+    session.compacted(compacted)
+    ui.compacted(before, compacted)
+    return compacted
+
+
 def handle(command, messages):
     if command == "/rewind":
         return rewind(messages)
     if command == "/sessions":
         return sessions(messages)
+    if command == "/compact":
+        return compact(messages)
     ui.note("\n".join(f"{name}  -  {help}" for name, help in COMMANDS.items()))
     return messages

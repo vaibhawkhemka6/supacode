@@ -1,4 +1,4 @@
-from . import commands, history, session
+from . import commands, compact, history, session
 from .models.llm import SYSTEM_PROMPT, call_llm
 from .tools import TOOLS, call_tool
 from .ui import ui
@@ -47,6 +47,9 @@ def main():
 
         history.sweep()  # turn's over: bin its temp files, win or not
         history.strip(messages)  # ...and shrink the tool output it produced
+
+        if compact.needed(usage):
+            messages = commands.compact(messages)
 
 
 if __name__ == "__main__":

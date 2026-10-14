@@ -44,8 +44,13 @@ def call_llm(messages, tools=None, on_text=None):
     It's optional: callers (like the __main__ block below, or a future
     subagent that wants no live output) can leave it unset and just get
     the final (message, usage) back, same as before streaming existed.
+
+    tools left as None defaults to the full TOOLS registry - but an
+    explicit tools=[] is a different request, "no tools at all," and is
+    honored as such. compact.py's summarizer is the first caller that
+    needs that: a one-shot call with no tool access, not the full registry.
     """
-    return _call(messages, tools=tools or TOOLS, on_text=on_text)
+    return _call(messages, tools=TOOLS if tools is None else tools, on_text=on_text)
 
 
 if __name__ == "__main__":

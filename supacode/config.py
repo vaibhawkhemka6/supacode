@@ -34,4 +34,5 @@ MODEL = os.environ.get("MODEL", _DEFAULT_MODEL.get(PROVIDER, ""))
 
 # How much room the model has, and when history.fit() starts to panic.
 CONTEXT_WINDOW = int(os.environ.get("CONTEXT_WINDOW", 128_000))
-COMPACT_AT = 0.85  # fit()'s budget line - same threshold compaction (9d) will use
+COMPACT_AT = 0.85  # fit()'s budget line - the same threshold compact.needed() checks
+COMPACT_TO = 0.35  # compact() cuts back to this much, so it doesn't retrigger next turn
